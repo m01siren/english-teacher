@@ -12,6 +12,16 @@ try {
   throw new Error('node:sqlite недоступен');
 }
 
+const {
+  prices,
+  schedule,
+  methodology,
+  lessonFormat,
+  faqRows,
+  reviewRows,
+  slotRows,
+} = require('./englishFlowSeedData');
+
 /** @type {import('node:sqlite').DatabaseSync | null} */
 let db = null;
 
@@ -116,23 +126,6 @@ function seedIfEmpty() {
     'INSERT INTO reviews (author, body, sort_order) VALUES (?, ?, ?)'
   );
 
-  const prices =
-    'Индивидуальный урок — 2000 ₽ / 60 минут.\n' +
-    'Пробное занятие — 1500 ₽ / 45 минут.\n' +
-    'Пакет из 8 уроков — скидка 10% (уточняйте при записи).';
-
-  const schedule =
-    'Обычно занятия: пн–сб, 10:00–21:00 по Москве. Точные слоты выбираются в боте при записи.';
-
-  const methodology =
-    'Уроки коммуникативные: много говорим на английском с первых минут. ' +
-    'Грамматика — в контексте, без зубрёжки. Домашка — короткая и осмысленная. ' +
-    'Уровень и цели подбираю после короткого интервью (можно на пробном).';
-
-  const lessonFormat =
-    'Онлайн, Zoom или Google Meet. Длительность: 45–60 минут. ' +
-    'Перед уроком присылаю материалы; после — краткий фидбек и что повторить.';
-
   db.exec('BEGIN IMMEDIATE');
   try {
     insertContent.run('prices', prices);
@@ -140,53 +133,17 @@ function seedIfEmpty() {
     insertContent.run('methodology', methodology);
     insertContent.run('lesson_format', lessonFormat);
 
-    const slotRows = [
-      ['s1', 'Пн 08.04, 10:00', '2026-04-08T10:00:00+03:00', 1],
-      ['s2', 'Пн 08.04, 14:00', '2026-04-08T14:00:00+03:00', 2],
-      ['s3', 'Ср 10.04, 11:00', '2026-04-10T11:00:00+03:00', 3],
-      ['s4', 'Ср 10.04, 18:30', '2026-04-10T18:30:00+03:00', 4],
-      ['s5', 'Сб 12.04, 12:00', '2026-04-12T12:00:00+03:00', 5],
-    ];
     for (const [id, label, iso, ord] of slotRows) {
       insertSlot.run(id, label, iso, ord);
     }
 
-    let ord = 0;
-    insertFaq.run('price', 'Сколько стоит?', prices, ord++);
-    insertFaq.run(
-      'duration',
-      'Сколько длится урок?',
-      'Обычно 60 минут; пробное — 45 минут. По договорённости возможны 90 минут.',
-      ord++
-    );
-    insertFaq.run(
-      'schedule',
-      'Какое расписание?',
-      `${schedule}\n\n${prices.split('\n')[0]}`,
-      ord++
-    );
-    insertFaq.run(
-      'level',
-      'С какого уровня берёте?',
-      'С A2 и выше — комфортно. Ниже — обсудим индивидуально после пробного.',
-      ord++
-    );
+    faqRows.forEach((row, i) => {
+      insertFaq.run(row.id, row.question, row.answer, i);
+    });
 
-    insertReview.run(
-      'Мария',
-      'За три месяца перестала бояться говорить на работе. Структурно и без давления.',
-      0
-    );
-    insertReview.run(
-      'Алексей',
-      'Готовились к IELTS — сдали на целевой балл. Обратная связь всегда по делу.',
-      1
-    );
-    insertReview.run(
-      'Елена',
-      'Удобный онлайн-формат, чёткие материалы. Рекомендую для взрослых, кто в найме.',
-      2
-    );
+    reviewRows.forEach((r, i) => {
+      insertReview.run(r.author, r.text, i);
+    });
 
     db.exec('COMMIT');
   } catch (e) {

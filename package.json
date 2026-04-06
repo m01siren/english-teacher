@@ -1,13 +1,14 @@
 {
-  "name": "tutor-telegram-bot",
+  "name": "english-flow-telegram-bot",
   "version": "1.0.0",
   "private": true,
-  "description": "Telegram bot for English tutor — booking, FAQ, in-memory FSM",
+  "description": "Telegram bot for English Flow school — booking, FAQ, AI assistant",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "seed:english-flow": "node scripts/apply-english-flow-content.js"
   },
   "engines": {
     "node": ">=22.5.0"

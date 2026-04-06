@@ -18,20 +18,20 @@ const MAX_COMMENT = 500;
 
 function mainMenuKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('Запись на урок', 'm_br')],
-    [Markup.button.callback('Пробное занятие', 'm_bt')],
-    [Markup.button.callback('Подход и формат уроков', 'm_inf')],
+    [Markup.button.callback('Запись на занятие / заявка', 'm_br')],
+    [Markup.button.callback('Пробный урок', 'm_bt')],
+    [Markup.button.callback('Курсы и формат English Flow', 'm_inf')],
     [Markup.button.callback('Отзывы', 'm_rev')],
     [Markup.button.callback('FAQ', 'm_faq')],
-    [Markup.button.callback('Задать вопрос (AI)', 'm_qa')],
+    [Markup.button.callback('Вопрос ассистенту', 'm_qa')],
     [Markup.button.callback('Отмена / перенос урока', 'm_rs')],
   ]);
 }
 
 function menuText() {
   return (
-    'Привет! Я Даша — твой репетитор по английскому языку. Мои студенты путешествуют без гугл переводчика) ' +
-    'Хочешь стать одним из них или у тебя какой-то другой вопрос — кликни ниже'
+    'Привет! Это English Flow — онлайн-школа английского языка.\n\n' +
+    'Поможем подобрать курс, записаться на пробный, оставить заявку или перенести урок. Выбери действие ниже 👇'
   );
 }
 
@@ -72,7 +72,7 @@ async function notifyTutor(ctx, text) {
       console.error('Не удалось отправить уведомление в Telegram:', e.message);
     }
   }
-  console.log('[уведомление репетитору]\n', text);
+  console.log('[уведомление English Flow]\n', text);
 }
 
 /**
@@ -96,7 +96,7 @@ function slotKeyboard(prefix) {
 
 function bookingSummary(draft) {
   const typeLabel =
-    draft.lessonType === 'trial' ? 'Пробное занятие' : 'Обычный урок';
+    draft.lessonType === 'trial' ? 'Пробный урок (30 мин)' : 'Занятие English Flow';
   const slot = draft.slotId ? db.getSlotById(draft.slotId) : undefined;
   const slotLabel = slot ? slot.label : draft.slotId;
   return (
@@ -135,8 +135,8 @@ async function startBooking(ctx, lessonType) {
   });
   const title =
     lessonType === 'trial'
-      ? 'Супер, давай выберем время для пробного 👇'
-      : 'Отлично, выбери удобный слот для урока 👇';
+      ? 'Пробный урок English Flow — выбери время 👇'
+      : 'Запись на занятие — выбери слот 👇';
   await ctx.reply(title, slotKeyboard('bs_'));
 }
 
@@ -163,7 +163,7 @@ function menuBackKeyboard() {
 async function askPhone(ctx) {
   patchSession(ctx.from.id, { state: S.BOOKING_PHONE });
   await ctx.reply(
-    'Напиши номер или нажми «Поделиться контактом» — чтобы я могла написать или перезвонить. ' +
+    'Напиши номер или нажми «Поделиться контактом» — чтобы координатор English Flow мог связаться. ' +
       'Передумал? Напиши «Отмена» или /menu.',
     Markup.keyboard([
       [Markup.button.contactRequest('Поделиться контактом')],
@@ -253,7 +253,7 @@ function setupBot(token) {
     const methodology = db.getContent('methodology');
     const lessonFormat = db.getContent('lesson_format');
     await ctx.editMessageText(
-      'Рассказываю коротко, как я работаю и как проходят занятия:\n\n' +
+      'English Flow — кратко о программах и формате:\n\n' +
         methodology +
         '\n\n' +
         lessonFormat,
@@ -326,8 +326,8 @@ function setupBot(token) {
     await ctx.answerCbQuery();
     patchSession(ctx.from.id, { state: S.QA });
     await ctx.editMessageText(
-      'Напиши вопрос в чат — отвечу по возможности. Про цены и время точнее всего в FAQ или после короткого привета в личке.\n\n' +
-        'Выйти: /menu или кнопка ниже.',
+      'Напиши вопрос — ассистент English Flow ответит по школе, курсам и записи. Про цены и слоты — из FAQ или после связи с координатором.\n\n' +
+        '/menu или кнопка ниже — выход.',
       Markup.inlineKeyboard([[Markup.button.callback('« Меню', 'm_main')]])
     );
   });
@@ -415,7 +415,7 @@ function setupBot(token) {
     } catch (e) {
       console.error(e);
       await ctx.reply(
-        'Не получилось сохранить — попробуй чуть позже или напиши мне в личку, если срочно.',
+        'Не получилось сохранить — попробуй позже или напиши в поддержку English Flow.',
         mainMenuKeyboard()
       );
       resetToMenu(uid);
@@ -431,7 +431,7 @@ function setupBot(token) {
 
     resetToMenu(uid);
     await ctx.reply(
-      'Готово, я всё увидела — скоро отпишусь. Рада, что ты здесь 💛',
+      'Заявка принята — координатор English Flow свяжется с тобой. Спасибо, что выбрал нас 💛',
       mainMenuKeyboard()
     );
   });
@@ -472,7 +472,7 @@ function setupBot(token) {
     patchSession(uid, { state: S.RESCHEDULE_LIST });
     const rows = list.map((b) => [
       Markup.button.callback(
-        `${b.slotLabel} · ${b.lessonType === 'trial' ? 'пробное' : 'урок'}`,
+        `${b.slotLabel} · ${b.lessonType === 'trial' ? 'пробный' : 'занятие'}`,
         `rs_b_${b.id}`
       ),
     ]);
@@ -499,7 +499,7 @@ function setupBot(token) {
       rescheduleBookingId: id,
     });
     await ctx.editMessageText(
-      `${b.slotLabel} · ${b.lessonType === 'trial' ? 'пробное' : 'урок'}\n\nЧто делаем?`,
+      `${b.slotLabel} · ${b.lessonType === 'trial' ? 'пробный' : 'занятие'}\n\nЧто делаем?`,
       Markup.inlineKeyboard([
         [Markup.button.callback('Отменить', `rs_ca_${id}`)],
         [Markup.button.callback('Перенести', `rs_tr_${id}`)],
@@ -613,7 +613,7 @@ function setupBot(token) {
     const ok = db.updateBookingSlot(bookingId, slotId);
     if (!ok) {
       await ctx.reply(
-        'Не получилось перенести — напиши мне, разберёмся.',
+        'Не получилось перенести — напиши координатору English Flow.',
         mainMenuKeyboard()
       );
       resetToMenu(ctx.from.id);
@@ -626,7 +626,7 @@ function setupBot(token) {
     );
     resetToMenu(ctx.from.id);
     await ctx.editMessageText(
-      `Готово — перенесла на ${updated?.slotLabel}. Увидимся!`,
+      `Готово — урок перенесён на ${updated?.slotLabel}. До встречи на занятии!`,
       mainMenuKeyboard()
     );
   });
@@ -649,7 +649,7 @@ function setupBot(token) {
       if (text.startsWith('/')) {
         await ctx.reply(
           'Такую команду не знаю. Напиши обычным текстом или открой /menu.',
-          mainMenuKeyboard()
+          menuBackKeyboard()
         );
         return;
       }
@@ -660,7 +660,7 @@ function setupBot(token) {
       const ans = plan.needsOpenAI
         ? await fetchOpenAIResponse(text)
         : plan.text;
-      await ctx.reply(ans);
+      await ctx.reply(ans, menuBackKeyboard());
       try {
         db.insertQaLog({
           userId: uid,
@@ -671,10 +671,6 @@ function setupBot(token) {
       } catch (e) {
         console.error('qa_logs:', e.message);
       }
-      await ctx.reply(
-        'Можешь написать ещё — или выбери кнопку ниже.',
-        mainMenuKeyboard()
-      );
       return;
     }
 
@@ -693,7 +689,7 @@ function setupBot(token) {
       const ans = plan.needsOpenAI
         ? await fetchOpenAIResponse(text)
         : plan.text;
-      await ctx.reply(ans);
+      await ctx.reply(ans, menuBackKeyboard());
       try {
         db.insertQaLog({
           userId: uid,
@@ -704,10 +700,6 @@ function setupBot(token) {
       } catch (e) {
         console.error('qa_logs:', e.message);
       }
-      await ctx.reply(
-        'Можешь написать ещё один вопрос или вернуться в меню:',
-        menuBackKeyboard()
-      );
       return;
     }
 
@@ -830,7 +822,7 @@ async function showReviewPage(ctx, page) {
     ],
     [Markup.button.callback('« Меню', 'm_main')],
   ]);
-  const body = `Что говорят ребята (${i + 1}/${total})\n\n${r.author}:\n${r.text}`;
+  const body = `Отзывы о English Flow (${i + 1}/${total})\n\n${r.author}:\n${r.text}`;
   await ctx.editMessageText(body, nav).catch(async () => {
     await ctx.reply(body, nav);
   });

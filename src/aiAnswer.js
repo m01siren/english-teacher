@@ -9,6 +9,12 @@ const {
   tryScriptedReply,
   normalizeForCache,
 } = require('./intentScripts');
+const {
+  looksLikePromptInjection,
+  sanitizeForLlm,
+  REFUSAL_INJECTION_RU,
+  FALLBACK_API_PREFIX_RU,
+} = require('./promptGuards');
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -74,13 +80,19 @@ function buildSystemContentCompact() {
  * @returns {{ needsOpenAI: boolean, text: string }}
  */
 function planAssistantReply(userMessage) {
-  const q = (userMessage || '').trim();
-  if (!q) {
+  const raw = (userMessage || '').trim();
+  if (!raw) {
     return {
       needsOpenAI: false,
       text: 'Напиши вопрос парой слов или выбери кнопку в меню.',
     };
   }
+
+  if (looksLikePromptInjection(raw)) {
+    return { needsOpenAI: false, text: REFUSAL_INJECTION_RU };
+  }
+
+  const q = sanitizeForLlm(raw);
 
   const scripted = tryScriptedReply(q);
   if (scripted) {
@@ -107,7 +119,18 @@ function planAssistantReply(userMessage) {
  * @returns {Promise<string>}
  */
 async function fetchOpenAIResponse(userMessage, opts = {}) {
-  const q = (userMessage || '').trim();
+  const raw = (userMessage || '').trim();
+  if (looksLikePromptInjection(raw)) {
+    return REFUSAL_INJECTION_RU;
+  }
+
+  const q = sanitizeForLlm(raw);
+  if (!q) {
+    return (
+      'Напиши вопрос про школу English Flow или открой меню — кнопки ниже.'
+    );
+  }
+
   const apiKey =
     opts.apiKey || opts.openaiKey || process.env.OPENAI_API_KEY;
   const model = opts.model || process.env.OPENAI_MODEL || DEFAULT_MODEL;
@@ -115,6 +138,8 @@ async function fetchOpenAIResponse(userMessage, opts = {}) {
   if (!apiKey) {
     return fallbackAnswer(q);
   }
+
+  const userPayload = clip(q, 1200);
 
   try {
     const res = await fetch(OPENAI_URL, {
@@ -127,7 +152,7 @@ async function fetchOpenAIResponse(userMessage, opts = {}) {
         model,
         messages: [
           { role: 'system', content: buildSystemContentCompact() },
-          { role: 'user', content: clip(q, 1200) },
+          { role: 'user', content: userPayload },
         ],
         max_tokens: MAX_TOKENS,
         temperature: TEMPERATURE,
@@ -154,7 +179,7 @@ async function fetchOpenAIResponse(userMessage, opts = {}) {
     console.error('OpenAI:', e.message);
   }
 
-  return fallbackAnswer(q);
+  return `${FALLBACK_API_PREFIX_RU}\n\n${fallbackAnswer(q)}`;
 }
 
 /**
@@ -221,7 +246,7 @@ function fallbackAnswer(q) {
   }
 
   return (
-    'Могу помочь с записью, пробным, отзывами и форматом — загляни в меню ниже.\n\n' +
+    'Помогу по школе English Flow: курсы, запись, пробный, отзывы — открой меню ниже.\n\n' +
     `Кратко: ${clip(METHODOLOGY_TEXT, 220)}`
   );
 }
