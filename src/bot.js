@@ -7,7 +7,11 @@ const {
   resetToMenu,
 } = require('./store');
 const S = require('./states');
-const { answerFreeformQuestion } = require('./aiAnswer');
+const {
+  planAssistantReply,
+  fetchOpenAIResponse,
+  sendTyping,
+} = require('./aiAnswer');
 
 const MAX_NAME = 100;
 const MAX_COMMENT = 500;
@@ -642,15 +646,20 @@ function setupBot(token) {
     }
 
     if (st === S.MAIN_MENU || st === S.REVIEWS || st === S.FAQ_LIST) {
-      await ctx.reply(
-        'Удобнее нажать кнопку снизу — или /menu, если потерялся.',
-        mainMenuKeyboard()
-      );
-      return;
-    }
-
-    if (st === S.QA) {
-      const ans = await answerFreeformQuestion(text);
+      if (text.startsWith('/')) {
+        await ctx.reply(
+          'Такую команду не знаю. Напиши обычным текстом или открой /menu.',
+          mainMenuKeyboard()
+        );
+        return;
+      }
+      const plan = planAssistantReply(text);
+      if (plan.needsOpenAI) {
+        await sendTyping(ctx);
+      }
+      const ans = plan.needsOpenAI
+        ? await fetchOpenAIResponse(text)
+        : plan.text;
       await ctx.reply(ans);
       try {
         db.insertQaLog({
@@ -662,7 +671,43 @@ function setupBot(token) {
       } catch (e) {
         console.error('qa_logs:', e.message);
       }
-      await ctx.reply('Можешь написать ещё один вопрос или вернуться в меню:', menuBackKeyboard());
+      await ctx.reply(
+        'Можешь написать ещё — или выбери кнопку ниже.',
+        mainMenuKeyboard()
+      );
+      return;
+    }
+
+    if (st === S.QA) {
+      if (text.startsWith('/')) {
+        await ctx.reply(
+          'Тут лучше обычный текст. Команды — через /menu.',
+          menuBackKeyboard()
+        );
+        return;
+      }
+      const plan = planAssistantReply(text);
+      if (plan.needsOpenAI) {
+        await sendTyping(ctx);
+      }
+      const ans = plan.needsOpenAI
+        ? await fetchOpenAIResponse(text)
+        : plan.text;
+      await ctx.reply(ans);
+      try {
+        db.insertQaLog({
+          userId: uid,
+          username: ctx.from.username,
+          question: text,
+          answer: ans,
+        });
+      } catch (e) {
+        console.error('qa_logs:', e.message);
+      }
+      await ctx.reply(
+        'Можешь написать ещё один вопрос или вернуться в меню:',
+        menuBackKeyboard()
+      );
       return;
     }
 
