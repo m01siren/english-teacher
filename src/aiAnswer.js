@@ -4,6 +4,8 @@ const {
   getSlots,
   getReviews,
 } = require('./db');
+const { createClient } = require('@supabase/supabase-js');
+const { OpenAIEmbeddings } = require('@langchain/openai');
 const { TUTOR_SYSTEM_PROMPT_COMPACT } = require('./tutorSystemPrompt');
 const {
   tryScriptedReply,
@@ -20,6 +22,9 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const MAX_TOKENS = 280;
 const TEMPERATURE = 0.3;
+const KB_TOP_K = 5;
+const KB_MIN_SIMILARITY = 0.72;
+const KB_SOURCE_ID = process.env.KB_SOURCE_ID || 'reglament';
 
 /** Кэш ответов OpenAI: одинаковый текст → без повторного списания токенов */
 const MAX_CACHE_ENTRIES = 150;
@@ -72,6 +77,88 @@ function buildFactsBlockCompact() {
 
 function buildSystemContentCompact() {
   return `${TUTOR_SYSTEM_PROMPT_COMPACT}\n\n${buildFactsBlockCompact()}`;
+}
+
+let supabaseClient = null;
+let embeddingsClient = null;
+
+function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  supabaseClient = createClient(url, key);
+  return supabaseClient;
+}
+
+function getEmbeddingsClient() {
+  if (embeddingsClient) return embeddingsClient;
+  const openAIApiKey = process.env.OPENAI_API_KEY;
+  if (!openAIApiKey) return null;
+  embeddingsClient = new OpenAIEmbeddings({
+    openAIApiKey,
+    model: process.env.OPENAI_EMBEDDINGS_MODEL || 'text-embedding-3-small',
+  });
+  return embeddingsClient;
+}
+
+function buildKbContextBlock(chunks) {
+  if (!chunks.length) return '';
+  const lines = chunks.map((c, idx) => {
+    const score = Number(c.similarity || 0).toFixed(3);
+    return `[${idx + 1}] score=${score}\n${clip(c.content, 700)}`;
+  });
+  return `КОНТЕКСТ ИЗ БАЗЫ ЗНАНИЙ (регламент):\n${lines.join('\n\n')}`;
+}
+
+function buildSystemContentWithRag(chunks) {
+  const ragRules =
+    'RAG-правила: отвечай только по фактам из блока ФАКТЫ и КОНТЕКСТ ИЗ БАЗЫ ЗНАНИЙ. ' +
+    'Если точного ответа там нет — честно скажи, что в базе знаний сейчас нет такого факта, и предложи обратиться к координатору или открыть меню. ' +
+    'Просьба сравнить с другой школой: откажись, не перечисляй каталог курсов вместо ответа.';
+  const kbBlock = buildKbContextBlock(chunks);
+  return [TUTOR_SYSTEM_PROMPT_COMPACT, ragRules, buildFactsBlockCompact(), kbBlock]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+async function retrieveKbChunks(question) {
+  const supabase = getSupabaseClient();
+  const embeddings = getEmbeddingsClient();
+  if (!supabase || !embeddings) return [];
+
+  try {
+    const queryEmbedding = await embeddings.embedQuery(question);
+    const { data, error } = await supabase.rpc('match_kb_chunks', {
+      query_embedding: queryEmbedding,
+      match_count: KB_TOP_K,
+      filter_source: KB_SOURCE_ID,
+    });
+    if (error) {
+      console.error('RAG retrieval error:', error.message);
+      return [];
+    }
+    return (data || []).filter(
+      (row) => Number(row.similarity || 0) >= KB_MIN_SIMILARITY
+    );
+  } catch (e) {
+    console.error('RAG retrieval exception:', e.message);
+    return [];
+  }
+}
+
+function logRagMatches(question, chunks) {
+  console.log('\n[RAG] question:', clip(question, 220));
+  if (!chunks.length) {
+    console.log('[RAG] no relevant chunks found');
+    return;
+  }
+  for (const c of chunks) {
+    const score = Number(c.similarity || 0).toFixed(3);
+    console.log(
+      `[RAG] chunk id=${c.id} score=${score} text="${clip(c.content, 180)}"`
+    );
+  }
 }
 
 /**
@@ -140,6 +227,8 @@ async function fetchOpenAIResponse(userMessage, opts = {}) {
   }
 
   const userPayload = clip(q, 1200);
+  const ragChunks = await retrieveKbChunks(q);
+  logRagMatches(q, ragChunks);
 
   try {
     const res = await fetch(OPENAI_URL, {
@@ -151,7 +240,7 @@ async function fetchOpenAIResponse(userMessage, opts = {}) {
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: buildSystemContentCompact() },
+          { role: 'system', content: buildSystemContentWithRag(ragChunks) },
           { role: 'user', content: userPayload },
         ],
         max_tokens: MAX_TOKENS,
